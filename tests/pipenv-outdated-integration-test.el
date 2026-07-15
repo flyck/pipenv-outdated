@@ -61,6 +61,47 @@ filtered out."
         (kill-buffer buffer))
       (delete-directory tmp t))))
 
+(ert-deftest pipenv-outdated-test-integration-codeartifact-refresh ()
+  "Private-index Pipfiles work end to end.
+The login snippet is prepended to the executed command and the private
+`acme-billing-client' package is reported alongside public ones."
+  (skip-unless (executable-find "bash"))
+  (let* ((tmp (make-temp-file "pipenv-outdated-test" t))
+         (pipfile (expand-file-name "Pipfile" tmp))
+         (pipenv-outdated-cache-directory (expand-file-name "cache/" tmp))
+         (pipenv-outdated-log-file nil)
+         (pipenv-outdated-use-installed-package-check nil)
+         (pipenv-outdated-aws-login-snippet "export CODEARTIFACT_TOKEN=fake-token;")
+         (pipenv-outdated-command
+          (format "%s update --outdated"
+                  (shell-quote-argument
+                   (expand-file-name "mock/pipenv"
+                                     pipenv-outdated-integration-test--dir))))
+         (buffer nil))
+    (copy-file (expand-file-name "fixtures/codeartifact/Pipfile"
+                                 pipenv-outdated-integration-test--dir)
+               pipfile)
+    (unwind-protect
+        (progn
+          (setq buffer (find-file-noselect pipfile))
+          (with-current-buffer buffer
+            (pipenv-outdated-refresh t)
+            (let ((deadline (+ (float-time) 10)))
+              (while (and pipenv-outdated--process
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq pipenv-outdated--status 'ready))
+            ;; The CodeArtifact login snippet ran before the check.
+            (should (string-prefix-p "export CODEARTIFACT_TOKEN=fake-token;"
+                                     pipenv-outdated--last-command))
+            (should (equal pipenv-outdated--last-result
+                           '(("requests" . "2.32.3")
+                             ("acme-billing-client" . "1.3.0"))))
+            (should (= (length pipenv-outdated--overlays) 2))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (delete-directory tmp t))))
+
 (provide 'pipenv-outdated-integration-test)
 
 ;;; pipenv-outdated-integration-test.el ends here

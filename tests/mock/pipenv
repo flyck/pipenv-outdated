@@ -10,6 +10,7 @@ Resolving dependencies...
 Skipped Update of Package requests: 2.30.0 installed, ==2.30.0 required (==2.30.0 set in Pipfile), 2.32.3 available.
 Package 'flask' out-of-date: <Version('2.3.2')> installed, <Version('3.0.3')> available.
 Package 'typing_extensions' out-of-date: <Version('4.7.0')> installed, <Version('4.12.2')> available.
+Package 'acme-billing-client' out-of-date: <Version('1.2.3')> installed, <Version('1.3.0')> available.
 Package 'moto' out-of-date: <Version('4.1.0')> installed, <Version('5.0.0')> available.
 OUT
       exit 0
