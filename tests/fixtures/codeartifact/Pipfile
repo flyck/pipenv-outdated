@@ -1,0 +1,16 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[[source]]
+name = "aws-codeartifact"
+url = "https://acme-123456789012.d.codeartifact.us-east-1.amazonaws.com/pypi/acme-pypi/simple/"
+verify_ssl = true
+
+[packages]
+acme-billing-client = {version = "==1.2.3", index = "aws-codeartifact"}
+requests = "==2.30.0"
+
+[requires]
+python_version = "3.11"

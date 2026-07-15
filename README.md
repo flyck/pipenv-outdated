@@ -1,100 +1,113 @@
 # pipenv-outdated
 
-An Emacs minor mode that highlights **outdated dependencies directly inside a
-Pipfile**. When you visit a Pipfile it runs `pipenv update --outdated` (or the
-much faster `pip list --outdated`) in the background, highlights every stale
-top-level dependency, shows the latest available version on hover, and offers
-one-click **Update all** / **Apply** / **Refresh** actions in the header line.
+[![CI](https://github.com/flyck/pipenv-outdated/actions/workflows/ci.yml/badge.svg)](https://github.com/flyck/pipenv-outdated/actions/workflows/ci.yml)
+[![Emacs](https://img.shields.io/badge/Emacs-27.2%20%7C%2028.2%20%7C%2029.4%20%7C%2030.1-7F5AB6?logo=gnuemacs&logoColor=white)](https://www.gnu.org/software/emacs/)
 
-- Runs fully asynchronously — Emacs never blocks while pipenv resolves.
-- Results are cached per Pipfile (24h by default, invalidated on file change).
-- Only top-level packages declared in `[packages]` / `[dev-packages]` are
-  highlighted — transitive noise is filtered out.
-- **Update all** installs packages one by one and rolls the Pipfile back to the
-  last good state when a single update fails.
-- **Apply** rewrites the version pins in the Pipfile without installing.
-- Dependency-resolver conflicts are parsed into a one-line summary
-  (`Dependency conflict: X conflicts with Y (requires Z)`) instead of a wall
-  of pip output.
-- Private package indexes (e.g. AWS CodeArtifact) are supported: a
-  configurable login snippet is prepended to every pipenv command when the
-  Pipfile references your private index.
-
-> Nothing is hardcoded — commands, shell, cache lifetime, log file and the
-> private-index login snippet are all `defcustom`s.
-
-## Install
-
-**Emacs 30+** with `use-package`'s built-in `:vc`:
-
-```elisp
-(add-to-list 'auto-mode-alist '("\\Pipfile\\'" . conf-mode))
-
-(use-package pipenv-outdated
-  :vc (:url "https://github.com/flyck/pipenv-outdated" :rev :newest)
-  :hook (conf-mode . pipenv-outdated-maybe-enable))
-```
-
-**Emacs 29 or earlier** — same form, but with
-[straight.el](https://github.com/radian-software/straight.el): swap `:vc (...)`
-for `:straight (pipenv-outdated :host github :repo "flyck/pipenv-outdated")`.
-
-**Manual clone** — clone anywhere (e.g. `~/.emacs.d/lisp/pipenv-outdated`) and
-replace the recipe line with `:load-path "~/.emacs.d/lisp/pipenv-outdated"`.
-
-## Usage
-
-Open a Pipfile. The mode enables itself (via
-`pipenv-outdated-maybe-enable`), kicks off a background check and installs a
-header line:
+Highlight outdated dependencies directly inside a Pipfile. When you visit a
+Pipfile, `pipenv update --outdated` runs in the background and every stale
+top-level dependency lights up, with one-click actions in the header line:
 
 ```
 pipenv-outdated: 3 outdated - Update all | Apply | Refresh
 ```
 
-- Outdated dependency lines are highlighted
-  (`pipenv-outdated-highlight-face`); hovering shows the latest version.
-- **Update all** runs `pipenv-outdated-update-command` per package
-  sequentially, rolling back the Pipfile if one fails.
-- **Apply** only rewrites the pins (`pkg = "==1.2.3"`) in the buffer, for when
-  you want to review before installing.
-- **Refresh** re-runs the check, bypassing the cache. Also available as
-  `M-x pipenv-outdated-refresh-force`.
+## Features
 
-The check re-runs automatically after every save or revert of the Pipfile.
+- **Async & cached** — Emacs never blocks; results are cached per Pipfile
+  (24h, invalidated when the Pipfile changes).
+- **Top-level only** — highlights only packages declared in `[packages]` /
+  `[dev-packages]`, hover shows the latest version.
+- **Update all** — installs packages one by one, rolling the Pipfile back
+  when an update fails.
+- **Apply** — rewrites version pins in the Pipfile without installing.
+- **Conflict summaries** — resolver failures collapse into one line:
+  `Dependency conflict: X conflicts with Y (requires Z)`.
+- **Private index support** — a configurable login snippet runs before
+  pipenv when the Pipfile uses e.g. AWS CodeArtifact.
+- **Fast mode** — optionally use `pip list --outdated` instead of pipenv's
+  resolver.
 
-## Configuration
+## Install & mandatory configuration
+
+Requires Emacs 27.1+. Pipfiles must open in `conf-mode`, and the defaults
+assume `pyenv` + `pipenv` on your `PATH`:
 
 ```elisp
-;; Faster check via `pip list --outdated` inside the existing virtualenv
-;; (skips pipenv's dependency resolver):
-(setq pipenv-outdated-use-installed-package-check t)
+;; Mandatory: make Emacs open Pipfiles in conf-mode.
+(add-to-list 'auto-mode-alist '("\\Pipfile\\'" . conf-mode))
 
-;; The commands used (defaults assume pyenv + pipenv):
-(setq pipenv-outdated-command "pyenv exec pipenv update --outdated"
-      pipenv-outdated-update-command "pyenv exec pipenv install --dev")
+(use-package pipenv-outdated
+  :vc (:url "https://github.com/flyck/pipenv-outdated" :rev :newest)  ; Emacs 30+
+  :hook (conf-mode . pipenv-outdated-maybe-enable))
+```
+
+Not using pyenv? Override the commands:
+
+```elisp
+(setq pipenv-outdated-command "pipenv update --outdated"
+      pipenv-outdated-update-command "pipenv install --dev")
+```
+
+On Emacs 29 or earlier, swap `:vc (...)` for straight.el:
+`:straight (pipenv-outdated :host github :repo "flyck/pipenv-outdated")`,
+or clone manually and use `:load-path`.
+
+## Optional configuration
+
+```elisp
+;; Much faster checks via `pip list --outdated` (skips pipenv's resolver):
+(setq pipenv-outdated-use-installed-package-check t)
 
 ;; Cache lifetime in seconds (default: 24h):
 (setq pipenv-outdated-cache-lifetime (* 60 60 24))
 ```
 
-### Private indexes (AWS CodeArtifact)
+### AWS CodeArtifact credentials
 
-When the Pipfile contains `pipenv-outdated-codeartifact-marker` (default:
-`"aws-codeartifact"`), the shell snippet in
-`pipenv-outdated-aws-login-snippet` is prepended to every pipenv command —
-use it to obtain a fresh auth token:
+If the Pipfile references a CodeArtifact source (detected via
+`pipenv-outdated-codeartifact-marker`, default `"aws-codeartifact"`), the
+snippet in `pipenv-outdated-aws-login-snippet` runs first so pipenv gets a
+fresh token. A fictitious example for the ACME corporation:
 
 ```elisp
 (setq pipenv-outdated-aws-login-snippet
-      "export CODEARTIFACT_TOKEN=$(aws codeartifact get-authorization-token \\
-         --domain YOUR_DOMAIN --domain-owner 123456789012 \\
-         --query authorizationToken --output text);")
+      "if ! aws sts get-caller-identity --profile acme-dev --output text &>/dev/null; then
+  export AWS_PROFILE=acme-dev; aws sso login;
+fi;
+export CODEARTIFACT_TOKEN=$(aws codeartifact get-authorization-token \\
+  --domain acme --domain-owner 123456789012 --region us-east-1 \\
+  --query authorizationToken --output text);")
 ```
+
+with a matching Pipfile source:
+
+```toml
+[[source]]
+name = "aws-codeartifact"
+url = "https://acme-123456789012.d.codeartifact.us-east-1.amazonaws.com/pypi/acme-pypi/simple/"
+verify_ssl = true
+```
+
+Never hardcode tokens — the snippet should fetch them at runtime.
 
 ## Troubleshooting
 
-Raw pipenv output for every run is appended to
-`pipenv-outdated.log` inside `pipenv-outdated-cache-directory`
-(set `pipenv-outdated-log-file` to nil to disable). Failures open a
-`*pipenv-outdated error*` buffer with the command, exit code and full output.
+Raw pipenv output is logged to `pipenv-outdated.log` in
+`pipenv-outdated-cache-directory`; failures open a
+`*pipenv-outdated error*` buffer with command, exit code and full output.
+
+## Development
+
+Tests are plain [ERT](https://www.gnu.org/software/emacs/manual/html_node/ert/)
+run via [Eldev](https://emacs-eldev.github.io/eldev/), which auto-discovers
+everything under `tests/`:
+
+```sh
+eldev test                                  # unit + integration tests
+eldev lint doc re package                   # checkdoc, relint, package-lint
+eldev compile --set all --warnings-as-errors
+```
+
+The integration test drives the real async refresh against
+`tests/mock/pipenv`, a script faking pipenv's output. CI runs the suite on
+Emacs 27.2, 28.2, 29.4 and 30.1.

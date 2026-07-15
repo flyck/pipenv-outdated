@@ -82,7 +82,7 @@ Package/version specs are appended to this command automatically."
 (defcustom pipenv-outdated-log-file "pipenv-outdated.log"
   "File used to log raw pipenv stderr/stdout.
 When set to a relative path the file lives inside
-`pipenv-outdated-cache-directory'. Set to nil to disable logging."
+`pipenv-outdated-cache-directory'.  Set to nil to disable logging."
   :type '(choice (const :tag "Disable logging" nil) file)
   :group 'pipenv-outdated)
 
@@ -270,7 +270,7 @@ Returns t when cached data has been applied."
 (defun pipenv-outdated--ensure-pipfile ()
   "Signal an error when the current buffer is not a Pipfile."
   (unless (pipenv-outdated--pipfile-buffer-p)
-    (user-error "pipenv-outdated-mode can only run inside a Pipfile")))
+    (user-error "Not a Pipfile buffer; pipenv-outdated-mode requires one")))
 
 (defun pipenv-outdated--pipfile-directory ()
   "Return the directory containing the current Pipfile."
@@ -366,7 +366,7 @@ Returns t when cached data has been applied."
     (user-error "Invalid package entry: %S" package))
   (let ((prefix (pipenv-outdated--nonempty-string pipenv-outdated-update-command)))
     (unless prefix
-      (user-error "pipenv-outdated-update-command is not configured"))
+      (user-error "No update command configured; set `pipenv-outdated-update-command'"))
     (format "%s %s"
             prefix
             (shell-quote-argument (format "%s==%s" (car package) (cdr package))))))
@@ -465,7 +465,8 @@ Return nil when OUTPUT does not contain a recognizable resolver conflict."
                 (nth 2 dependency))))))
 
 (defun pipenv-outdated--show-error-buffer (pipfile exit-code event output)
-  "Show a temporary buffer with dependency-check failure details."
+  "Show a buffer with failure details for PIPFILE.
+EXIT-CODE, EVENT and OUTPUT come from the failed check process."
   (let ((buffer (get-buffer-create pipenv-outdated--error-buffer-name))
         (directory (and pipfile (file-name-directory pipfile)))
         (command pipenv-outdated--last-command))
@@ -495,7 +496,7 @@ Return nil when OUTPUT does not contain a recognizable resolver conflict."
       "Command failed; see *pipenv-outdated error*"))
 
 (defun pipenv-outdated--apply-overlays (packages)
-  "Highlight PACKAGE entries in the current Pipfile."
+  "Highlight PACKAGES entries in the current Pipfile."
   (pipenv-outdated--clear-overlays)
   (when packages
     (save-excursion
@@ -659,7 +660,10 @@ When FORCE is non-nil, bypasses any cached pip output."
       (pipenv-outdated--run-update-sequence packages pipfile-buffer buffer 0 0 snapshot))))
 
 (defun pipenv-outdated--run-update-sequence (queue pipfile-buffer buffer success failure snapshot)
-  "Helper used by `pipenv-outdated--run-update-command'."
+  "Helper used by `pipenv-outdated--run-update-command'.
+Installs the QUEUE of packages one by one for PIPFILE-BUFFER, logging
+progress to BUFFER and counting SUCCESS and FAILURE outcomes.  SNAPSHOT
+holds the last good Pipfile contents used for rollback on failure."
   (if (null queue)
       (progn
         (message "pipenv-outdated: update finished (%d succeeded, %d failed)" success failure)
@@ -770,7 +774,7 @@ When FORCE is non-nil, bypasses any cached pip output."
              ((looking-at "^[ \t]*\\[\\([^]]+\\)\\]")
               (setq section (downcase (match-string 1))))
              ((and (member section '("packages" "dev-packages"))
-                   (looking-at "^[ \t]*\\([^=[:space:]]+\\)[ \t]*="))
+                   (looking-at "^[ \t]*\\([^=\n[:space:]]+\\)[ \t]*="))
               (push (downcase (match-string 1)) names)))
             (forward-line 1))
           names)))))
@@ -807,7 +811,7 @@ When FORCE is non-nil, bypasses any cached pip output."
     t))
 
 (defun pipenv-outdated--apply-version-to-pipfile (pkg version)
-  "Update the Pipfile entry for PKG to VERSION. Returns non-nil on success."
+  "Update the Pipfile entry for PKG to VERSION.  Returns non-nil on success."
   (let ((case-fold-search nil)
         (name (regexp-quote pkg))
         (found nil))

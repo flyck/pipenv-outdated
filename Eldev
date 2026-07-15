@@ -1,0 +1,10 @@
+; -*- mode: emacs-lisp; lexical-binding: t -*-
+
+(eldev-use-package-archive 'gnu-elpa)
+
+(setq eldev-project-main-file "pipenv-outdated.el")
+
+;; Test files live in tests/ and are discovered automatically; keep the
+;; Pipfile fixtures and the pipenv mock out of every fileset.
+(setf eldev-standard-excludes
+      `(:or ,eldev-standard-excludes "./tests/fixtures" "./tests/mock"))

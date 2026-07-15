@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+cmd="$1"; shift
+case "$cmd" in
+  update)
+    if [ "$1" = "--outdated" ]; then
+      cat <<'OUT'
+Building requirements...
+Resolving dependencies...
+✔ Success!
+Skipped Update of Package requests: 2.29.0 installed, ==2.29.0 required (==2.29.0 set in Pipfile), 2.30.0 available.
+Package 'moto' out-of-date: <Version('4.1.0')> installed, <Version('5.0.0')> available.
+OUT
+      exit 0
+    fi
+    ;;
+  install)
+    pkg_spec=""
+    for arg in "$@"; do
+      case "$arg" in
+        *"=="*)
+          pkg_spec="$arg"
+          ;;
+      esac
+    done
+    if [ -z "$pkg_spec" ]; then
+      echo "No package spec provided" >&2
+      exit 1
+    fi
+    pkg="${pkg_spec%%==*}"
+    version="${pkg_spec##*==}"
+    if [ "$pkg" = "moto" ]; then
+      echo "Simulated pipenv install failure" >&2
+      exit 1
+    else
+      pipfile="$PWD/Pipfile"
+      pybin="$(command -v python3 || command -v python)"
+      if [ -z "$pybin" ]; then
+        echo "python is required for the mock" >&2
+        exit 1
+      fi
+      PIPENV_MOCK_PIPFILE="$pipfile" \
+      PIPENV_MOCK_PACKAGE="$pkg" \
+      PIPENV_MOCK_VERSION="$version" "$pybin" <<'PY'
+import os
+import re
+from pathlib import Path
+
+path = Path(os.environ["PIPENV_MOCK_PIPFILE"])
+pkg = os.environ["PIPENV_MOCK_PACKAGE"]
+version = os.environ["PIPENV_MOCK_VERSION"]
+text = path.read_text()
+
+patterns = [
+    re.compile(rf'^(\s*{re.escape(pkg)}\s*=\s*")([^"]+)(")', re.MULTILINE),
+    re.compile(rf'^(\s*{re.escape(pkg)}\s*=\s*{{[^}}]*version\s*=\s*")([^"]+)(")', re.MULTILINE),
+]
+
+for pattern in patterns:
+    new_text, count = pattern.subn(rf'\1=={version}\3', text, count=1)
+    if count:
+        path.write_text(new_text)
+        break
+
+PY
+      echo "Simulated pipenv install success"
+      exit 0
+    fi
+    ;;
+  *) echo "Unsupported command $cmd" >&2; exit 1;;
+esac

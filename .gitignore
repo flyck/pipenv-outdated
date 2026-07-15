@@ -11,3 +11,6 @@ eln-cache/
 
 # Runtime artifacts
 *.log
+
+# Eldev workspace
+/.eldev/
