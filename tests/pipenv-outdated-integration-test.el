@@ -7,6 +7,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'seq)
 (require 'pipenv-outdated)
 
 (defconst pipenv-outdated-integration-test--dir
@@ -126,6 +127,120 @@ which used to pop the error buffer via a killed duplicate check."
                 (accept-process-output nil 0.05)))
             (should (eq pipenv-outdated--status 'ready))
             (should (null (get-buffer pipenv-outdated--error-buffer-name)))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (delete-directory tmp t))))
+
+(defun pipenv-outdated-integration-test--wait-for-update ()
+  "Wait until the install and its follow-up check have settled."
+  (let ((deadline (+ (float-time) 10)))
+    (while (and (< (float-time) deadline)
+                (not (and (null pipenv-outdated--process)
+                          (with-current-buffer pipenv-outdated--update-buffer-name
+                            (string-match-p "^Install \\(completed\\|failed\\)"
+                                            (buffer-string))))))
+      (accept-process-output nil 0.05))))
+
+(ert-deftest pipenv-outdated-test-integration-update-all ()
+  "Update all rewrites the pins in place, then runs one bare install.
+The Pipfile must never be restructured: entries keep their position and
+style because pipenv receives no package arguments."
+  (skip-unless (executable-find "bash"))
+  (let* ((tmp (make-temp-file "pipenv-outdated-test" t))
+         (pipfile (expand-file-name "Pipfile" tmp))
+         (pipenv-outdated-cache-directory (expand-file-name "cache/" tmp))
+         (pipenv-outdated-log-file nil)
+         (pipenv-outdated-use-installed-package-check nil)
+         (mock (shell-quote-argument
+                (expand-file-name "mock/pipenv"
+                                  pipenv-outdated-integration-test--dir)))
+         (pipenv-outdated-command (format "%s update --outdated" mock))
+         (pipenv-outdated-update-command (format "%s install --dev" mock))
+         (buffer nil))
+    (copy-file (expand-file-name "fixtures/basic/Pipfile"
+                                 pipenv-outdated-integration-test--dir)
+               pipfile)
+    (when (get-buffer pipenv-outdated--update-buffer-name)
+      (kill-buffer pipenv-outdated--update-buffer-name))
+    (unwind-protect
+        (progn
+          (setq buffer (find-file-noselect pipfile))
+          (with-current-buffer buffer
+            (pipenv-outdated-mode 1)
+            (let ((deadline (+ (float-time) 10)))
+              (while (and pipenv-outdated--process
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (= (length pipenv-outdated--last-result) 3))
+            (let ((line-order-before
+                   (mapcar (lambda (line) (car (split-string line " ")))
+                           (seq-filter (lambda (l) (string-match-p "=" l))
+                                       (split-string (buffer-string) "\n")))))
+              (pipenv-outdated-update-all)
+              ;; Pins were rewritten in place before the install started.
+              (should-not (buffer-modified-p))
+              (should (string-match-p "^requests = \"==2\\.32\\.3\"$" (buffer-string)))
+              (pipenv-outdated-integration-test--wait-for-update)
+              (with-current-buffer pipenv-outdated--update-buffer-name
+                (should (string-match-p "Simulated pipenv install success"
+                                        (buffer-string)))
+                (should (string-match-p "^Install completed" (buffer-string))))
+              ;; Entry order is untouched by the update.
+              (should (equal line-order-before
+                             (mapcar (lambda (line) (car (split-string line " ")))
+                                     (seq-filter (lambda (l) (string-match-p "=" l))
+                                                 (split-string (buffer-string) "\n")))))
+              (should (eq pipenv-outdated--status 'ready))
+              (should (null (get-buffer pipenv-outdated--error-buffer-name))))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (delete-directory tmp t))))
+
+(ert-deftest pipenv-outdated-test-integration-update-all-rollback ()
+  "A failing install restores the previous Pipfile contents."
+  (skip-unless (executable-find "bash"))
+  (let* ((tmp (make-temp-file "pipenv-outdated-test" t))
+         (pipfile (expand-file-name "Pipfile" tmp))
+         (pipenv-outdated-cache-directory (expand-file-name "cache/" tmp))
+         (pipenv-outdated-log-file nil)
+         (pipenv-outdated-use-installed-package-check nil)
+         (mock (shell-quote-argument
+                (expand-file-name "mock/pipenv"
+                                  pipenv-outdated-integration-test--dir)))
+         (pipenv-outdated-command (format "%s update --outdated" mock))
+         (pipenv-outdated-update-command (format "%s install --dev" mock))
+         (buffer nil)
+         (original nil))
+    (copy-file (expand-file-name "fixtures/basic/Pipfile"
+                                 pipenv-outdated-integration-test--dir)
+               pipfile)
+    (when (get-buffer pipenv-outdated--update-buffer-name)
+      (kill-buffer pipenv-outdated--update-buffer-name))
+    (unwind-protect
+        (progn
+          (setq buffer (find-file-noselect pipfile))
+          (with-current-buffer buffer
+            (setq original (buffer-string))
+            (pipenv-outdated-mode 1)
+            (let ((deadline (+ (float-time) 10)))
+              (while (and pipenv-outdated--process
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (= (length pipenv-outdated--last-result) 3))
+            (let ((process-environment
+                   (cons "PIPENV_MOCK_INSTALL_FAIL=1" process-environment)))
+              (pipenv-outdated-update-all))
+            (pipenv-outdated-integration-test--wait-for-update)
+            (with-current-buffer pipenv-outdated--update-buffer-name
+              (should (string-match-p "^Install failed" (buffer-string))))
+            ;; The snapshot was restored verbatim.
+            (should (equal (buffer-string) original))
+            ;; The forced re-check after the rollback settles cleanly.
+            (let ((deadline (+ (float-time) 10)))
+              (while (and pipenv-outdated--process
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq pipenv-outdated--status 'ready))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer))
       (delete-directory tmp t))))

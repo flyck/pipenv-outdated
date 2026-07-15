@@ -158,15 +158,6 @@
       (should (equal (pipenv-outdated--build-shell-command "pipenv update --outdated")
                      "pipenv update --outdated")))))
 
-(ert-deftest pipenv-outdated-test-build-update-command-line ()
-  "The update command appends a quoted name==version spec."
-  (let ((pipenv-outdated-update-command "pipenv install --dev"))
-    (should (equal (pipenv-outdated--build-update-command-line '("requests" . "2.31.0"))
-                   (format "pipenv install --dev %s"
-                           (shell-quote-argument "requests==2.31.0"))))
-    (should-error (pipenv-outdated--build-update-command-line '("requests" . nil))
-                  :type 'user-error)))
-
 (provide 'pipenv-outdated-test)
 
 ;;; pipenv-outdated-test.el ends here

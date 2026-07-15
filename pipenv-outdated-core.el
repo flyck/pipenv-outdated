@@ -25,9 +25,11 @@
   :group 'pipenv-outdated)
 
 (defcustom pipenv-outdated-update-command "pyenv exec pipenv install --dev"
-  "Shell command prefix used for the \"Update all\" action.
+  "Shell command run by the \"Update all\" action.
 
-Package/version specs are appended to this command automatically."
+The command runs after the latest versions have been written to the
+Pipfile, so it receives no package arguments: a plain install simply
+picks up the rewritten pins."
   :type 'string
   :group 'pipenv-outdated)
 

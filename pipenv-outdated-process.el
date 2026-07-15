@@ -37,17 +37,6 @@
   "Return the program/arguments list to execute COMMAND through the shell."
   (list (or pipenv-outdated-shell shell-file-name "/bin/sh") "-lc" command))
 
-(defun pipenv-outdated--build-update-command-line (package)
-  "Return the update command string for a single PACKAGE cons cell."
-  (unless (and package (car package) (cdr package))
-    (user-error "Invalid package entry: %S" package))
-  (let ((prefix (pipenv-outdated--nonempty-string pipenv-outdated-update-command)))
-    (unless prefix
-      (user-error "No update command configured; set `pipenv-outdated-update-command'"))
-    (format "%s %s"
-            prefix
-            (shell-quote-argument (format "%s==%s" (car package) (cdr package))))))
-
 ;;;; Output parsing
 
 (defun pipenv-outdated--join-wrapped-lines (output)
@@ -178,19 +167,25 @@ BUFFER is the Pipfile buffer the check was started from."
                  (or output "")
                  event)))))
 
-(defun pipenv-outdated--run-update-process (package buffer callback)
-  "Run the update command for PACKAGE, sending output to BUFFER.
-PACKAGE is a (NAME . VERSION) cons cell.  CALLBACK is called with the
-finished process object; use `process-exit-status' on it to decide
-whether the update succeeded."
-  (let ((command (pipenv-outdated--build-shell-command
-                  (pipenv-outdated--build-update-command-line package))))
+(defun pipenv-outdated--run-install-process (buffer callback)
+  "Run `pipenv-outdated-update-command', streaming output into BUFFER.
+The command receives no package arguments; it is expected to install
+whatever the (already rewritten) Pipfile declares.  CALLBACK is called
+with the finished process object; use `process-exit-status' on it to
+decide whether the install succeeded.  Returns the shell command
+string."
+  (let* ((base (or (pipenv-outdated--nonempty-string pipenv-outdated-update-command)
+                   (user-error "No update command configured; set `pipenv-outdated-update-command'")))
+         (command (pipenv-outdated--build-shell-command base)))
     (make-process
-     :name (format "pipenv-outdated-update-%s" (car package))
+     :name "pipenv-outdated-install"
      :buffer buffer
      :command (pipenv-outdated--shell-command-list command)
+     :noquery t
      :sentinel (lambda (proc _event)
-                 (funcall callback proc)))))
+                 (when (memq (process-status proc) '(exit signal))
+                   (funcall callback proc))))
+    command))
 
 (provide 'pipenv-outdated-process)
 

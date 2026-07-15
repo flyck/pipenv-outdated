@@ -17,57 +17,16 @@ OUT
     fi
     ;;
   install)
-    pkg_spec=""
-    for arg in "$@"; do
-      case "$arg" in
-        *"=="*)
-          pkg_spec="$arg"
-          ;;
-      esac
-    done
-    if [ -z "$pkg_spec" ]; then
-      echo "No package spec provided" >&2
-      exit 1
-    fi
-    pkg="${pkg_spec%%==*}"
-    version="${pkg_spec##*==}"
-    if [ "$pkg" = "moto" ]; then
+    # The package rewrites the Pipfile pins itself before installing, so
+    # a plain `pipenv install --dev` just installs from the Pipfile as
+    # written and never edits it.
+    echo "Installing dependencies from Pipfile..."
+    if [ -n "$PIPENV_MOCK_INSTALL_FAIL" ]; then
       echo "Simulated pipenv install failure" >&2
       exit 1
-    else
-      pipfile="$PWD/Pipfile"
-      pybin="$(command -v python3 || command -v python)"
-      if [ -z "$pybin" ]; then
-        echo "python is required for the mock" >&2
-        exit 1
-      fi
-      PIPENV_MOCK_PIPFILE="$pipfile" \
-      PIPENV_MOCK_PACKAGE="$pkg" \
-      PIPENV_MOCK_VERSION="$version" "$pybin" <<'PY'
-import os
-import re
-from pathlib import Path
-
-path = Path(os.environ["PIPENV_MOCK_PIPFILE"])
-pkg = os.environ["PIPENV_MOCK_PACKAGE"]
-version = os.environ["PIPENV_MOCK_VERSION"]
-text = path.read_text()
-
-patterns = [
-    re.compile(rf'^(\s*{re.escape(pkg)}\s*=\s*")([^"]+)(")', re.MULTILINE),
-    re.compile(rf'^(\s*{re.escape(pkg)}\s*=\s*{{[^}}]*version\s*=\s*")([^"]+)(")', re.MULTILINE),
-]
-
-for pattern in patterns:
-    new_text, count = pattern.subn(rf'\1=={version}\3', text, count=1)
-    if count:
-        path.write_text(new_text)
-        break
-
-PY
-      echo "Simulated pipenv install success"
-      exit 0
     fi
+    echo "Simulated pipenv install success"
+    exit 0
     ;;
   *) echo "Unsupported command $cmd" >&2; exit 1;;
 esac

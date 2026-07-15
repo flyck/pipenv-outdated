@@ -15,7 +15,8 @@ pipenv-outdated: 3 outdated - Update all | Apply | Refresh
 
 - **Async & cached** — Emacs never blocks; results are cached per Pipfile (24h, invalidated when
   the Pipfile changes).
-- **Update all** — installs packages one by one, rolling the Pipfile back when an update fails.
+- **Update all** — rewrites the version pins in place (order, table style and extras preserved),
+  then runs a single install; the previous Pipfile is restored when the install fails.
 - **Apply** — rewrites version pins in the Pipfile without installing.
 - **Private index support** — a configurable login snippet runs before pipenv when the Pipfile
   uses e.g. AWS CodeArtifact.

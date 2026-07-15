@@ -164,12 +164,11 @@ ALL-PARSED alist, the raw OUTPUT string, and the process EVENT."
 
 ;;;; Commands
 
-(defun pipenv-outdated-apply-all ()
-  "Apply latest versions to the Pipfile without installing packages."
-  (interactive)
-  (pipenv-outdated--ensure-pipfile)
-  (unless pipenv-outdated--last-result
-    (user-error "No outdated package data available - run `pipenv-outdated-refresh' first"))
+(defun pipenv-outdated--apply-pins ()
+  "Write the latest known version of every outdated package to the Pipfile.
+Entries are rewritten in place, preserving their position, table style
+and extras.  Return a cons cell (MODIFIED . MISSING) with the number of
+rewritten entries and the names that were not found."
   (let ((modified 0)
         (missing '()))
     (save-excursion
@@ -179,17 +178,31 @@ ALL-PARSED alist, the raw OUTPUT string, and the process EVENT."
           (if (pipenv-outdated--apply-version-to-pipfile (car pkg) (cdr pkg))
               (setq modified (1+ modified))
             (push (car pkg) missing)))))
+    (cons modified (nreverse missing))))
+
+(defun pipenv-outdated--applied-pins-summary (applied)
+  "Return a short human-readable summary of APPLIED, an (N . MISSING) cons."
+  (format "%d entries%s"
+          (car applied)
+          (if (cdr applied)
+              (format " (missing: %s)" (string-join (cdr applied) ", "))
+            "")))
+
+(defun pipenv-outdated-apply-all ()
+  "Apply latest versions to the Pipfile without installing packages."
+  (interactive)
+  (pipenv-outdated--ensure-pipfile)
+  (unless pipenv-outdated--last-result
+    (user-error "No outdated package data available - run `pipenv-outdated-refresh' first"))
+  (let ((applied (pipenv-outdated--apply-pins)))
     (when (and buffer-file-name (buffer-modified-p))
       ;; The forced refresh below re-checks; don't let after-save-hook
       ;; spawn a duplicate that would immediately be killed.
       (let ((pipenv-outdated--inhibit-refresh t))
         (save-buffer)))
     (pipenv-outdated-refresh-force)
-    (message "pipenv-outdated: applied %d entries%s"
-             modified
-             (if missing
-                 (format " (missing: %s)" (string-join (nreverse missing) ", "))
-               ""))))
+    (message "pipenv-outdated: applied %s"
+             (pipenv-outdated--applied-pins-summary applied))))
 
 ;;;###autoload
 (cl-defun pipenv-outdated-refresh (&optional force)
@@ -233,79 +246,88 @@ highlights while the new check runs."
     (message "pipenv-outdated: not a Pipfile buffer; refresh skipped")))
 
 (defun pipenv-outdated--run-update-command ()
-  "Execute the update command sequentially for each outdated package."
+  "Apply the latest versions to the Pipfile, then install them.
+The pins are rewritten in place first (exactly like
+`pipenv-outdated-apply-all'), so entries keep their position, table
+style and extras.  A single `pipenv-outdated-update-command' run then
+installs from the rewritten Pipfile.  On failure the previous Pipfile
+contents are restored."
   (let* ((pipfile-buffer (current-buffer))
          (packages pipenv-outdated--last-result))
     (unless (and packages (> (length packages) 0))
       (user-error "No outdated package list available - run `pipenv-outdated-refresh' first"))
     (let* ((default-directory (pipenv-outdated--pipfile-directory))
            (buffer (get-buffer-create pipenv-outdated--update-buffer-name))
-           (snapshot (pipenv-outdated--read-pipfile-contents pipfile-buffer)))
+           (snapshot (pipenv-outdated--read-pipfile-contents pipfile-buffer))
+           (applied (pipenv-outdated--apply-pins)))
+      (when (and buffer-file-name (buffer-modified-p))
+        ;; The follow-up check runs from the install callback; don't let
+        ;; after-save-hook spawn one that races the install.
+        (let ((pipenv-outdated--inhibit-refresh t))
+          (save-buffer)))
       (with-current-buffer buffer
         (read-only-mode -1)
         (erase-buffer)
-        (insert "Running sequential updates:\n\n")
+        (insert (format "Applied %s to the Pipfile.\nRunning %s\n\n"
+                        (pipenv-outdated--applied-pins-summary applied)
+                        pipenv-outdated-update-command))
         (read-only-mode 1))
       (display-buffer buffer)
-      (pipenv-outdated--run-update-sequence packages pipfile-buffer buffer 0 0 snapshot))))
+      (let ((command
+             (pipenv-outdated--run-install-process
+              buffer
+              (lambda (proc)
+                (pipenv-outdated--handle-install-result proc pipfile-buffer snapshot)))))
+        (pipenv-outdated--log
+         (format "Starting update install for %s"
+                 (or (buffer-file-name pipfile-buffer) "<unknown Pipfile>"))
+         (format "Command: %s\nDirectory: %s\nApplied: %s"
+                 command
+                 default-directory
+                 (pipenv-outdated--applied-pins-summary applied)))))))
 
-(defun pipenv-outdated--run-update-sequence (queue pipfile-buffer buffer success failure snapshot)
-  "Helper used by `pipenv-outdated--run-update-command'.
-Installs the QUEUE of packages one by one for PIPFILE-BUFFER, logging
-progress to BUFFER and counting SUCCESS and FAILURE outcomes.  SNAPSHOT
-holds the last good Pipfile contents used for rollback on failure."
-  (if (null queue)
-      (progn
-        (message "pipenv-outdated: update finished (%d succeeded, %d failed)" success failure)
-        (when (buffer-live-p pipfile-buffer)
-          (with-current-buffer pipfile-buffer
-            (pipenv-outdated--invalidate-cache)
-            (pipenv-outdated-refresh))))
-    (let* ((pkg (car queue))
-           (pkg-name (car pkg)))
+(defun pipenv-outdated--handle-install-result (proc pipfile-buffer snapshot)
+  "Handle the finished install PROC for PIPFILE-BUFFER.
+SNAPSHOT holds the pre-update Pipfile contents, restored on failure."
+  (let* ((exit-code (process-exit-status proc))
+         (succeeded-p (zerop exit-code))
+         (buffer (process-buffer proc))
+         (output (when (buffer-live-p buffer)
+                   (with-current-buffer buffer
+                     (buffer-string)))))
+    (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (read-only-mode -1)
         (goto-char (point-max))
-        (insert (format "-> %s\n" pkg-name))
-        (read-only-mode 1))
-      (pipenv-outdated--run-update-process
-       pkg buffer
-       (lambda (proc)
-         (let ((succeeded-p (zerop (process-exit-status proc)))
-               (next-snapshot snapshot))
-           (when (buffer-live-p (process-buffer proc))
-             (with-current-buffer (process-buffer proc)
-               (read-only-mode -1)
-               (goto-char (point-max))
-               (insert (format "\n[%s] %s (exit %s)\n"
-                               pkg-name
-                               (if succeeded-p "completed" "failed")
-                               (process-exit-status proc)))
-               (read-only-mode 1)))
-           (if succeeded-p
-               (when (buffer-live-p pipfile-buffer)
-                 (setq next-snapshot (pipenv-outdated--read-pipfile-contents pipfile-buffer))
-                 (pipenv-outdated--invalidate-cache)
-                 (pipenv-outdated-refresh))
-             (when (and snapshot (buffer-live-p pipfile-buffer))
-               (pipenv-outdated--restore-pipfile snapshot pipfile-buffer)
-               (with-current-buffer pipfile-buffer
-                 (setq pipenv-outdated--last-result
-                       (cons pkg pipenv-outdated--last-result))
-                 (pipenv-outdated--apply-overlays pipenv-outdated--last-result)
-                 (pipenv-outdated--set-status 'ready
-                                              (format "%d outdated packages"
-                                                      (length pipenv-outdated--last-result))))
-               (pipenv-outdated-refresh-force)))
-           (pipenv-outdated--run-update-sequence
-            (cdr queue) pipfile-buffer buffer
-            (if succeeded-p (1+ success) success)
-            (if succeeded-p failure (1+ failure))
-            next-snapshot)))))))
+        (insert (format "\nInstall %s (exit %s)\n"
+                        (if succeeded-p
+                            "completed"
+                          "failed - restoring previous Pipfile")
+                        exit-code))
+        (read-only-mode 1)))
+    (pipenv-outdated--log
+     (format "Update install finished (exit %s)" exit-code)
+     output)
+    (if succeeded-p
+        (when (buffer-live-p pipfile-buffer)
+          (with-current-buffer pipfile-buffer
+            (pipenv-outdated--invalidate-cache)
+            (pipenv-outdated-refresh))
+          (message "pipenv-outdated: update finished successfully"))
+      (when (buffer-live-p pipfile-buffer)
+        (when snapshot
+          ;; The restore reverts the buffer; the forced refresh below
+          ;; re-checks, so silence the after-revert-hook duplicate.
+          (let ((pipenv-outdated--inhibit-refresh t))
+            (pipenv-outdated--restore-pipfile snapshot pipfile-buffer)))
+        (with-current-buffer pipfile-buffer
+          (pipenv-outdated-refresh-force))
+        (message "pipenv-outdated: update failed (exit %s); previous Pipfile restored"
+                 exit-code)))))
 
 ;;;###autoload
 (defun pipenv-outdated-update-all ()
-  "Run `pipenv-outdated-update-command' and refresh the overlays afterwards."
+  "Apply the latest versions to the Pipfile and install them."
   (interactive)
   (pipenv-outdated--ensure-pipfile)
   (pipenv-outdated--run-update-command))
