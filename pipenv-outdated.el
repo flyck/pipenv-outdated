@@ -342,9 +342,21 @@ Returns t when cached data has been applied."
         pipenv-outdated--status-message message)
   (force-mode-line-update))
 
+(defvar pipenv-outdated--inhibit-refresh nil
+  "When non-nil, `pipenv-outdated-refresh' does nothing.
+Bound around saves performed by this package so `after-save-hook' does
+not spawn a duplicate check.")
+
 (defun pipenv-outdated--kill-process ()
-  "Stop a running background process, if any."
+  "Stop a running background process, if any.
+The sentinel is detached first so the intentional kill is not reported
+as a dependency-check failure."
   (when (process-live-p pipenv-outdated--process)
+    (set-process-sentinel
+     pipenv-outdated--process
+     (lambda (proc _event)
+       (when (buffer-live-p (process-buffer proc))
+         (kill-buffer (process-buffer proc)))))
     (kill-process pipenv-outdated--process))
   (setq pipenv-outdated--process nil))
 
@@ -583,7 +595,10 @@ EXIT-CODE, EVENT and OUTPUT come from the failed check process."
               (setq modified (1+ modified))
             (push (car pkg) missing)))))
     (when (and buffer-file-name (buffer-modified-p))
-      (save-buffer))
+      ;; The forced refresh below re-checks; don't let after-save-hook
+      ;; spawn a duplicate that would immediately be killed.
+      (let ((pipenv-outdated--inhibit-refresh t))
+        (save-buffer)))
     (pipenv-outdated-refresh-force)
     (message "pipenv-outdated: applied %d entries%s"
              modified
@@ -596,6 +611,8 @@ EXIT-CODE, EVENT and OUTPUT come from the failed check process."
   "Refresh the outdated package information for the current buffer's Pipfile.
 When FORCE is non-nil, bypasses any cached pip output."
   (interactive "P")
+  (when pipenv-outdated--inhibit-refresh
+    (cl-return-from pipenv-outdated-refresh))
   (if (pipenv-outdated--pipfile-buffer-p)
       (progn
         (pipenv-outdated--update-top-level-packages)

@@ -69,7 +69,63 @@ filtered out."
                           (< (float-time) deadline))
                 (accept-process-output nil 0.05)))
             (should (eq pipenv-outdated--status 'ready))
-            (should (= (length pipenv-outdated--overlays) 3))))
+            (should (= (length pipenv-outdated--overlays) 3))
+            ;; Killing a pending check by starting another one must not
+            ;; pop the error buffer ("killed: 9").
+            (pipenv-outdated-refresh-force)
+            (pipenv-outdated-refresh-force)
+            (let ((deadline (+ (float-time) 10)))
+              (while (and pipenv-outdated--process
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq pipenv-outdated--status 'ready))
+            (should (null (get-buffer pipenv-outdated--error-buffer-name)))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (delete-directory tmp t))))
+
+(ert-deftest pipenv-outdated-test-integration-apply-all ()
+  "Apply rewrites the pins, saves, and re-checks without spurious errors.
+This mirrors clicking \"Apply\" in the header line with the mode enabled,
+which used to pop the error buffer via a killed duplicate check."
+  (skip-unless (executable-find "bash"))
+  (let* ((tmp (make-temp-file "pipenv-outdated-test" t))
+         (pipfile (expand-file-name "Pipfile" tmp))
+         (pipenv-outdated-cache-directory (expand-file-name "cache/" tmp))
+         (pipenv-outdated-log-file nil)
+         (pipenv-outdated-use-installed-package-check nil)
+         (pipenv-outdated-command
+          (format "%s update --outdated"
+                  (shell-quote-argument
+                   (expand-file-name "mock/pipenv"
+                                     pipenv-outdated-integration-test--dir))))
+         (buffer nil))
+    (copy-file (expand-file-name "fixtures/basic/Pipfile"
+                                 pipenv-outdated-integration-test--dir)
+               pipfile)
+    (when (get-buffer pipenv-outdated--error-buffer-name)
+      (kill-buffer pipenv-outdated--error-buffer-name))
+    (unwind-protect
+        (progn
+          (setq buffer (find-file-noselect pipfile))
+          (with-current-buffer buffer
+            (pipenv-outdated-mode 1)
+            (let ((deadline (+ (float-time) 10)))
+              (while (and pipenv-outdated--process
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (= (length pipenv-outdated--last-result) 3))
+            (pipenv-outdated-apply-all)
+            (should-not (buffer-modified-p))
+            (should (string-match-p "^requests = \"==2\\.32\\.3\"$" (buffer-string)))
+            (should (string-match-p "version = \"==3\\.0\\.3\"" (buffer-string)))
+            (should (string-match-p "^typing_extensions = \"==4\\.12\\.2\"$" (buffer-string)))
+            (let ((deadline (+ (float-time) 10)))
+              (while (and pipenv-outdated--process
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq pipenv-outdated--status 'ready))
+            (should (null (get-buffer pipenv-outdated--error-buffer-name)))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer))
       (delete-directory tmp t))))
