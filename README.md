@@ -111,3 +111,14 @@ eldev compile --set all --warnings-as-errors
 The integration test drives the real async refresh against
 `tests/mock/pipenv`, a script faking pipenv's output. CI runs the suite on
 Emacs 27.2, 28.2, 29.4 and 30.1.
+
+### Demo (no pipenv required)
+
+Open a fixture Pipfile with the check mocked — handy for screenshots:
+
+```sh
+emacs -Q -L . -l pipenv-outdated \
+  --eval '(setq pipenv-outdated-command (expand-file-name "tests/mock/pipenv update --outdated"))' \
+  tests/fixtures/basic/Pipfile \
+  -f pipenv-outdated-mode
+```

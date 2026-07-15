@@ -15,8 +15,9 @@
 
 (ert-deftest pipenv-outdated-test-integration-refresh ()
   "A refresh spawns the mock pipenv, parses its output and filters it.
-The mock reports `requests' and `moto' as outdated; only `requests' is
-declared in the fixture Pipfile, so it alone must survive."
+The mock reports `requests', `flask', `typing_extensions' and `moto' as
+outdated; `moto' is not declared in the fixture Pipfile and must be
+filtered out."
   (skip-unless (executable-find "bash"))
   (let* ((tmp (make-temp-file "pipenv-outdated-test" t))
          (pipfile (expand-file-name "Pipfile" tmp))
@@ -44,11 +45,18 @@ declared in the fixture Pipfile, so it alone must survive."
             (should (null pipenv-outdated--process))
             (should (eq pipenv-outdated--status 'ready))
             (should (equal pipenv-outdated--last-result
-                           '(("requests" . "2.30.0"))))
-            ;; The overlay sits on the requests line of the Pipfile.
-            (should (= (length pipenv-outdated--overlays) 1))
-            (goto-char (overlay-start (car pipenv-outdated--overlays)))
-            (should (looking-at "requests = "))))
+                           '(("requests" . "2.32.3")
+                             ("flask" . "3.0.3")
+                             ("typing_extensions" . "4.12.2"))))
+            ;; One overlay per outdated package, each on its Pipfile line.
+            (should (= (length pipenv-outdated--overlays) 3))
+            (should (equal (sort (mapcar (lambda (ov)
+                                           (save-excursion
+                                             (goto-char (overlay-start ov))
+                                             (thing-at-point 'symbol t)))
+                                         pipenv-outdated--overlays)
+                                 #'string<)
+                           '("flask" "requests" "typing_extensions")))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer))
       (delete-directory tmp t))))
