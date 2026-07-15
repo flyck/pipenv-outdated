@@ -56,7 +56,20 @@ filtered out."
                                              (thing-at-point 'symbol t)))
                                          pipenv-outdated--overlays)
                                  #'string<)
-                           '("flask" "requests" "typing_extensions")))))
+                           '("flask" "requests" "typing_extensions")))
+            ;; A forced refresh (the header-line Refresh action) resets
+            ;; results and highlights while the new check runs...
+            (pipenv-outdated-refresh-force)
+            (should (eq pipenv-outdated--status 'pending))
+            (should (null pipenv-outdated--last-result))
+            (should (= (length pipenv-outdated--overlays) 0))
+            ;; ...and they come back once it finishes.
+            (let ((deadline (+ (float-time) 10)))
+              (while (and pipenv-outdated--process
+                          (< (float-time) deadline))
+                (accept-process-output nil 0.05)))
+            (should (eq pipenv-outdated--status 'ready))
+            (should (= (length pipenv-outdated--overlays) 3))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer))
       (delete-directory tmp t))))

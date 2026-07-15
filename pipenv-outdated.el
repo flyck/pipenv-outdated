@@ -634,11 +634,15 @@ When FORCE is non-nil, bypasses any cached pip output."
     (message "pipenv-outdated: not a Pipfile buffer; refresh skipped")))
 
 (defun pipenv-outdated-refresh-force ()
-  "Refresh outdated packages ignoring any cached value."
+  "Refresh outdated packages ignoring any cached value.
+Unlike automatic refreshes, this clears the current results and
+highlights while the new check runs."
   (interactive)
   (if (pipenv-outdated--pipfile-buffer-p)
       (progn
         (pipenv-outdated--invalidate-cache)
+        (pipenv-outdated--clear-overlays)
+        (setq pipenv-outdated--last-result nil)
         (pipenv-outdated-refresh t))
     (message "pipenv-outdated: not a Pipfile buffer; refresh skipped")))
 
