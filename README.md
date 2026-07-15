@@ -119,6 +119,10 @@ Open a fixture Pipfile with the check mocked — handy for screenshots:
 ```sh
 emacs -Q -L . -l pipenv-outdated \
   --eval '(setq pipenv-outdated-command (expand-file-name "tests/mock/pipenv update --outdated"))' \
+  --eval '(setq pipenv-outdated-update-command (expand-file-name "tests/mock/pipenv install --dev"))' \
   tests/fixtures/basic/Pipfile \
   -f pipenv-outdated-mode
 ```
+
+All header-line actions work against the mock — "Update all" rewrites the
+pins in the fixture without touching pyenv or any real environment.
