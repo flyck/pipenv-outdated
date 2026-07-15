@@ -116,6 +116,12 @@ dependency conflicts that only appear during locking."
 (defvar-local pipenv-outdated--last-command nil
   "Last shell command executed for the current Pipfile.")
 
+(defvar-local pipenv-outdated--check-start-time nil
+  "Float time at which the running dependency check was started.")
+
+(defvar-local pipenv-outdated--pending-timer nil
+  "Timer that redraws the header line while a check is running.")
+
 (defvar pipenv-outdated--inhibit-refresh nil
   "When non-nil, `pipenv-outdated-refresh' does nothing.
 Bound around saves performed by this package so `after-save-hook' does

@@ -34,7 +34,14 @@
   (let* ((prefix (propertize "pipenv-outdated" 'face 'mode-line-buffer-id))
          (message (or pipenv-outdated--status-message "")))
     (pcase pipenv-outdated--status
-      ('pending (format "%s: checking... %s" prefix message))
+      ('pending (format "%s: checking...%s %s"
+                        prefix
+                        (if pipenv-outdated--check-start-time
+                            (format " (%ds)"
+                                    (truncate (- (float-time)
+                                                 pipenv-outdated--check-start-time)))
+                          "")
+                        message))
       ('error (format "%s: %s" prefix message))
       (_
        (let ((refresh-button (pipenv-outdated--header-button "Refresh" #'pipenv-outdated-refresh-force)))
@@ -66,7 +73,35 @@
   "Set STATUS and optional MESSAGE for the header line."
   (setq pipenv-outdated--status status
         pipenv-outdated--status-message message)
+  (if (eq status 'pending)
+      (pipenv-outdated--start-pending-timer)
+    (pipenv-outdated--stop-pending-timer))
   (force-mode-line-update))
+
+(defun pipenv-outdated--start-pending-timer ()
+  "Record the check start time and keep the header line ticking.
+The timer cancels itself when the buffer is killed or the status
+leaves `pending' without going through `pipenv-outdated--set-status'."
+  (setq pipenv-outdated--check-start-time (float-time))
+  (unless pipenv-outdated--pending-timer
+    (let ((buffer (current-buffer))
+          (timer nil))
+      (setq timer
+            (run-at-time 1 1
+                         (lambda ()
+                           (if (and (buffer-live-p buffer)
+                                    (eq (buffer-local-value 'pipenv-outdated--status buffer)
+                                        'pending))
+                               (with-current-buffer buffer
+                                 (force-mode-line-update))
+                             (cancel-timer timer)))))
+      (setq pipenv-outdated--pending-timer timer))))
+
+(defun pipenv-outdated--stop-pending-timer ()
+  "Cancel the header line timer, if one is running."
+  (when pipenv-outdated--pending-timer
+    (cancel-timer pipenv-outdated--pending-timer)
+    (setq pipenv-outdated--pending-timer nil)))
 
 (defun pipenv-outdated--clear-overlays ()
   "Delete overlays previously added by this mode."
