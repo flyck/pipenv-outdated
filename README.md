@@ -3,9 +3,9 @@
 [![CI](https://github.com/flyck/pipenv-outdated/actions/workflows/ci.yml/badge.svg)](https://github.com/flyck/pipenv-outdated/actions/workflows/ci.yml)
 [![Emacs](https://img.shields.io/badge/Emacs-27.2%20%7C%2028.2%20%7C%2029.4%20%7C%2030.1-7F5AB6?logo=gnuemacs&logoColor=white)](https://www.gnu.org/software/emacs/)
 
-Highlight outdated dependencies directly inside a Pipfile. When you visit a
-Pipfile, `pipenv update --outdated` runs in the background and every stale
-top-level dependency lights up, with one-click actions in the header line:
+Highlight outdated dependencies directly inside a Pipfile. When you visit a Pipfile, `pipenv
+update --outdated` runs in the background and every stale top-level dependency lights up, with
+one-click actions in the header line:
 
 ```
 pipenv-outdated: 3 outdated - Update all | Apply | Refresh
@@ -13,24 +13,17 @@ pipenv-outdated: 3 outdated - Update all | Apply | Refresh
 
 ## Features
 
-- **Async & cached** — Emacs never blocks; results are cached per Pipfile
-  (24h, invalidated when the Pipfile changes).
-- **Top-level only** — highlights only packages declared in `[packages]` /
-  `[dev-packages]`, hover shows the latest version.
-- **Update all** — installs packages one by one, rolling the Pipfile back
-  when an update fails.
+- **Async & cached** — Emacs never blocks; results are cached per Pipfile (24h, invalidated when
+  the Pipfile changes).
+- **Update all** — installs packages one by one, rolling the Pipfile back when an update fails.
 - **Apply** — rewrites version pins in the Pipfile without installing.
-- **Conflict summaries** — resolver failures collapse into one line:
-  `Dependency conflict: X conflicts with Y (requires Z)`.
-- **Private index support** — a configurable login snippet runs before
-  pipenv when the Pipfile uses e.g. AWS CodeArtifact.
-- **Fast mode** — optionally use `pip list --outdated` instead of pipenv's
-  resolver.
+- **Private index support** — a configurable login snippet runs before pipenv when the Pipfile
+  uses e.g. AWS CodeArtifact.
 
 ## Install & mandatory configuration
 
-Requires Emacs 27.1+. Pipfiles must open in `conf-mode`, and the defaults
-assume `pyenv` + `pipenv` on your `PATH`:
+Requires Emacs 27.1+. Minor mode that can be used ontop of `conf-mode`. The defaults assume
+`pyenv` + `pipenv` on your `PATH`:
 
 ```elisp
 ;; Mandatory: make Emacs open Pipfiles in conf-mode.
@@ -65,9 +58,9 @@ or clone manually and use `:load-path`.
 ### AWS CodeArtifact credentials
 
 If the Pipfile references a CodeArtifact source (detected via
-`pipenv-outdated-codeartifact-marker`, default `"aws-codeartifact"`), the
-snippet in `pipenv-outdated-aws-login-snippet` runs first so pipenv gets a
-fresh token. A fictitious example for the ACME corporation:
+`pipenv-outdated-codeartifact-marker`, default `"aws-codeartifact"`), the snippet in
+`pipenv-outdated-aws-login-snippet` runs first so pipenv gets a fresh token. A fictitious example
+for the ACME corporation:
 
 ```elisp
 (setq pipenv-outdated-aws-login-snippet
@@ -92,15 +85,13 @@ Never hardcode tokens — the snippet should fetch them at runtime.
 
 ## Troubleshooting
 
-Raw pipenv output is logged to `pipenv-outdated.log` in
-`pipenv-outdated-cache-directory`; failures open a
-`*pipenv-outdated error*` buffer with command, exit code and full output.
+Raw pipenv output is logged to `pipenv-outdated.log` in `pipenv-outdated-cache-directory`;
+failures open a `*pipenv-outdated error*` buffer with command, exit code and full output.
 
 ## Development
 
-Tests are plain [ERT](https://www.gnu.org/software/emacs/manual/html_node/ert/)
-run via [Eldev](https://emacs-eldev.github.io/eldev/), which auto-discovers
-everything under `tests/`:
+Tests are plain [ERT](https://www.gnu.org/software/emacs/manual/html_node/ert/) run via
+[Eldev](https://emacs-eldev.github.io/eldev/), which auto-discovers everything under `tests/`:
 
 ```sh
 eldev test                                  # unit + integration tests
@@ -108,9 +99,8 @@ eldev lint doc re package                   # checkdoc, relint, package-lint
 eldev compile --set all --warnings-as-errors
 ```
 
-The integration test drives the real async refresh against
-`tests/mock/pipenv`, a script faking pipenv's output. CI runs the suite on
-Emacs 27.2, 28.2, 29.4 and 30.1.
+The integration test drives the real async refresh against `tests/mock/pipenv`, a script faking
+pipenv's output. CI runs the suite on Emacs 27.2, 28.2, 29.4 and 30.1.
 
 ### Demo (no pipenv required)
 
@@ -124,5 +114,5 @@ emacs -Q -L . -l pipenv-outdated \
   -f pipenv-outdated-mode
 ```
 
-All header-line actions work against the mock — "Update all" rewrites the
-pins in the fixture without touching pyenv or any real environment.
+All header-line actions work against the mock — "Update all" rewrites the pins in the fixture
+without touching pyenv or any real environment.
